@@ -1,0 +1,131 @@
+MUSEO CONTINUO · escena de ejemplo para el Corte 2
+Taller de Diseño Interactivo IV · Bloque 3 · RV web con A-Frame 1.8.0
+=====================================================================
+
+Un museo virtual con dos salas y un mezzanine que reúne 12 interacciones
+en una sola escena:
+
+  GALERÍA (planta 0) ── ascensor ──► ARCHIVO (mezzanine, planta 1)
+        │
+      portal
+        ▼
+  SALA DE PROYECCIÓN (separada, solo se llega por el portal)
+
+
+1. CÓMO ABRIRLA
+---------------
+No funciona con doble clic: el navegador bloquea texturas, audio y video
+cargados desde file://. Hay que servir la carpeta:
+
+  · Terminal, dentro de la carpeta:   python3 -m http.server 8000
+    y abrir  http://localhost:8000
+  · O en VS Code: clic derecho en index.html > "Open with Live Server".
+
+Controles en escritorio: arrastrar = mirar · clic = seleccionar o teletransportarse.
+En el celular: arrastrar con el dedo = mirar · tocar = seleccionar.
+Meta Quest: rayo láser de cualquier mando + gatillo.
+
+Para probar en el Quest: WebXR exige HTTPS. Un servidor local por http://
+(con la IP del computador) muestra la escena, pero NO deja entrar en modo VR.
+Opciones: publicar la carpeta en GitHub Pages (gratis, ya es HTTPS) o usar
+un túnel HTTPS. Glitch dejó de alojar proyectos en julio de 2025.
+
+
+2. LAS 12 INTERACCIONES: QUÉ COMPONENTE Y DÓNDE
+-----------------------------------------------
+Todo el código está comentado en  js/componentes-museo.js  (índice al inicio).
+
+ #  Interacción                 Componente                   Dónde verla
+ -- --------------------------- ---------------------------- ------------------------------
+ 1  Teletransporte al piso      teleport-al-piso             Pisos de las tres áreas.
+                                                             Retícula cian = se puede,
+                                                             magenta = no se puede.
+ 2  Puntos fijos de recorrido   punto-recorrido              Círculos 1–9 (galería y sala B),
+                                                             A–B (mezzanine). Orientan la
+                                                             mirada hacia la obra (escritorio).
+ 3  Portales entre salas        portal                       Pared derecha de la galería y
+                                                             pared del fondo de la sala B.
+ 4  Ascensor al mezzanine       ascensor + boton-ascensor    Plataforma con aro violeta y
+                                                             botones "Subir"/"Bajar".
+ 5  Resaltar al pasar           resaltar                     Obras, botones, portales, paradas.
+ 6  Sonido corto al seleccionar sonido-al-seleccionar (en    Cualquier clic sobre algo .clicable.
+                                <a-scene>) + sistema museo
+ 7  Cartela emergente al clic   cartela                      Las 4 obras de la galería.
+ 8  Audioguía por obra          audioguia                    Parlante bajo cada obra
+                                                             (sonido posicional desde la obra).
+ 9  Hotspots sobre un objeto    hotspot (+ pulso)            Puntos luminosos de la
+                                                             "Lámpara Órbita" (centro).
+10  Panel siguiente/anterior    carrusel + carrusel-boton    Muro del mezzanine (Archivo).
+11  Video play()/pause()        pantalla-video               Pantalla y botón de la sala B.
+                                                             Se pausa solo al salir de la sala.
+12  Sonido ambiente por zonas   zona-sonido                  Tres ambientes que se funden al
+                                                             pasar de una zona a otra.
+
+Apoyo:
+  · Sistema "museo": mueve el RIG (no la cámara) con fundido a negro,
+    sabe en qué planta está el visitante y reproduce los sonidos de interfaz.
+  · panel-texto: dibuja los textos en un canvas (tildes y ñ sin fuentes externas).
+  · mirar-camara: los números de las paradas y los botones del ascensor
+    giran para mirar al visitante.
+
+
+3. REGLAS DE DISEÑO QUE LA ESCENA APLICA (y conviene discutir en clase)
+-----------------------------------------------------------------------
+  · Clases del raycaster: .clicable (se selecciona), .piso (se teletransporta),
+    .bloquea (el rayo no atraviesa: muros, pedestales, butacas).
+  · El raycaster solo prueba la geometría PROPIA de cada elemento .clicable,
+    no la de sus hijos. Por eso las paradas tienen un disco (cilindro bajo)
+    propio y no dependen del aro que llevan adentro.
+  · visible="false" NO evita que el rayo choque. Lo oculto debe perder la clase
+    .clicable (función MUSEO.mostrar).
+  · El teletransporte no cambia de planta: solo se aceptan superficies que miran
+    hacia arriba y que estén a la misma altura del visitante. Para subir, el ascensor.
+  · Nunca se mueve la cámara sin que el visitante lo pida. El ascensor solo se
+    mueve tras pulsar el botón y con aceleración suave (3 s).
+  · En VR el programa no gira la cabeza del visitante: las paradas solo orientan
+    la mirada en escritorio/móvil.
+  · Arrastrar para mirar no cuenta como clic (evita teletransportes accidentales).
+  · Audio y video necesitan un gesto del usuario: lo da el botón "Entrar al museo".
+  · No usar punto y coma ( ; ) dentro de textos de atributos: A-Frame lo usa
+    para separar propiedades.
+
+
+4. CÓMO ADAPTARLA A SU PROYECTO
+-------------------------------
+  · Cambiar una obra: reemplace la imagen en assets/img y el <img> en <a-assets>.
+    El ancho/alto del <a-image> debe respetar la proporción de la imagen.
+  · Añadir una obra: copie un bloque "soporte + a-image + botón audioguía" y
+    ajuste position/rotation del soporte según el muro:
+       muro izquierdo  rotation="0 90 0"   · muro derecho rotation="0 -90 0"
+       muro del fondo  rotation="0 0 0"    · muro de entrada rotation="0 180 0"
+  · Añadir una parada: copie un <a-entity mixin="parada" punto-recorrido=...>
+    y cambie position y mirar (el punto hacia el que debe mirar).
+  · Cambiar el ambiente de una zona: edite min/max (coordenadas del mundo) y src.
+  · Audioguías: reemplace los .mp3 de assets/audio por grabaciones propias.
+  · Plantas: si cambia la altura del mezzanine, actualice museo="niveles: ..." en
+    <a-scene>, ascensor="niveles: ..." y la position y de la plataforma
+    (y = nivel + 0.02 − 0.05).
+
+
+5. ESTRUCTURA
+-------------
+  index.html                  La escena (comentada por secciones)
+  js/componentes-museo.js     Sistema y componentes
+  assets/img/                 Obras, archivo, texturas e íconos
+  assets/audio/               Interfaz (ui-*), ambientes (amb-*), audioguías (guia-*)
+  assets/video/               continuo.mp4 (H.264) y continuo.webm (alternativa)
+  vista_previa.jpg            Capturas de la escena funcionando
+
+
+6. ORIGEN DE LOS RECURSOS Y VERIFICACIÓN
+-----------------------------------------
+  · Obras, imágenes del archivo, texturas, sonidos, música y video son material
+    original generado por código para este ejemplo. "Colectivo Continuo", sus
+    artistas y la "Lámpara Órbita" son ficticios.
+  · Íconos: Lucide (licencia ISC), renderizados a PNG.
+  · Voces de las audioguías: síntesis de voz offline (Piper, voz es-carlfm).
+    Son de muestra: lo ideal es que cada equipo grabe las suyas.
+  · Probada con A-Frame 1.8.0 en Chromium (render por software): 26 pruebas
+    automáticas de las 12 interacciones sin errores en consola. No se probó en
+    un visor Quest físico: verificar allí el rayo de los mandos y el confort
+    del ascensor antes de usarla en clase.
