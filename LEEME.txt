@@ -1,0 +1,178 @@
+MUSEO CONTINUO · escena de ejemplo para el Corte 2 · VERSIÓN 2: MIRADA
+Taller de Diseño Interactivo IV · Bloque 3 · RV web con A-Frame 1.8.0
+=====================================================================
+
+Un museo virtual con dos salas y un mezzanine, pensado para recorrerse con
+un VISOR DE CELULAR SIN MANDOS (tipo Cardboard). Todo se activa con la
+MIRADA: el <a-cursor fuse="true"> de la cámara convierte "mirar un punto
+1,5 s" en un clic. No se usa el mouse, el dedo ni mandos.
+
+  GALERÍA (planta 0) ── ascensor ──► ARCHIVO (mezzanine, planta 1)
+        │
+      portal
+        ▼
+  SALA DE PROYECCIÓN (separada, solo se llega por el portal)
+
+
+1. CÓMO ABRIRLA
+---------------
+No funciona con doble clic. Hay que servir la carpeta.
+
+  · Para probar en el COMPUTADOR:  python3 -m http.server 8000  (dentro de la
+    carpeta) y abrir http://localhost:8000, o Live Server en VS Code.
+    Se mira arrastrando con el mouse; la mira del centro activa las cosas igual
+    que en el visor.
+
+  · Para el CELULAR hace falta HTTPS (sin HTTPS el navegador no entrega los
+    sensores de movimiento ni deja entrar en VR). Lo más sencillo:
+    GitHub Pages: suba la carpeta a un repositorio > Settings > Pages >
+    "Deploy from a branch" > main. La dirección queda en https://usuario.github.io/repositorio/
+    (Glitch ya no aloja proyectos desde julio de 2025.)
+
+  En la pantalla de entrada hay dos botones:
+    · "Entrar con visor VR": pide los permisos y entra al modo visor.
+    · "Ver en pantalla": recorrido normal (el botón "Ver con visor" queda
+      abajo a la derecha para pasar al visor después).
+
+  Qué pasa según el teléfono:
+    · ANDROID con Chrome: usa WebXR, el modo VR real del navegador (dos vistas
+      con corrección de lentes). La primera vez puede pedir escanear el código
+      QR del visor. Se sale con el botón "atrás".
+    · iPHONE (Safari o Chrome, ambos usan el motor de Safari): no tiene WebXR,
+      así que A-Frame no puede entrar en VR. La escena usa un RESPALDO propio:
+      divide la pantalla en dos vistas (componente visor-estereo) y sigue la
+      cabeza con los sensores. Pide permiso de movimiento al tocar el botón:
+      hay que aceptarlo. Limitaciones: no corrige la distorsión de las lentes y
+      Safari no permite pantalla completa, así que la barra del navegador puede
+      quedar visible. Hay que girar el teléfono en horizontal.
+    · Meta Quest: "Entrar con visor VR" entra en WebXR y la mirada funciona
+      igual (mira al centro de la vista). No se usan los mandos.
+
+
+2. CÓMO SE USA CON LA MIRADA
+----------------------------
+  · La MIRA (punto blanco del centro) se vuelve cian sobre lo que se puede
+    activar, y un ANILLO se llena en 1,5 s. Al llenarse, se activa.
+  · Para repetir la misma acción hay que apartar la vista y volver a mirar
+    (así funciona el fuse de A-Frame: dispara una vez por cada entrada).
+    Excepción: las flechas del carrusel repiten solas si se sigue mirando.
+  · CAMINAR: mirar un punto del piso y dejar la cabeza quieta 1,6 s.
+    Retícula del piso: cian = mire quieto para saltar · gris = gire un poco
+    la cabeza para volver a caminar · magenta = no se puede (otra planta o
+    más de 9 m). Mirarse los pies no hace nada.
+
+
+3. LAS 12 INTERACCIONES CON LA MIRADA: QUÉ COMPONENTE Y QUÉ CAMBIÓ
+-------------------------------------------------------------------
+Todo el código está comentado en  js/componentes-museo.js  (índice al inicio).
+
+ #  Interacción                 Componente                 Con la mirada
+ -- --------------------------- -------------------------- ---------------------------------
+ 1  Teletransporte al piso      teleport-al-piso +         Mirada QUIETA 1,6 s sobre el piso.
+                                sistema museo (tock)       Tras cada salto queda desarmado
+                                                           hasta girar la cabeza >10°.
+ 2  Puntos fijos de recorrido   punto-recorrido            Mirar el círculo 1,5 s.
+ 3  Portales entre salas        portal                     Mirar el portal 1,5 s.
+ 4  Ascensor al mezzanine       ascensor + boton-ascensor  Mirar el botón "Subir"/"Bajar".
+ 5  Resaltar al pasar           resaltar                   Aparece en cuanto la mira entra.
+ 6  Sonido corto al seleccionar sonido-al-seleccionar      Suena cuando el anillo se completa.
+ 7  Cartela emergente           cartela                    Mirar la OBRA la abre. Se cierra con
+                                                           su botón X, al abrir otra o al moverse.
+ 8  Audioguía por obra          audioguia                  Mirar el parlante: inicia / detiene.
+ 9  Hotspots sobre un objeto    hotspot (+ pulso)          Mirar el punto luminoso (puntos más
+                                                           grandes que en la v1: 15 cm).
+10  Panel siguiente/anterior    carrusel + carrusel-boton  Mirar la flecha; si sigue mirando,
+                                                           avanza otra vez cada 1,3 s.
+11  Video play()/pause()        pantalla-video             Play grande al centro (solo en
+                                                           pausa) y botón debajo de la pantalla.
+                                                           La PANTALLA YA NO ES BOTÓN.
+12  Sonido ambiente por zonas   zona-sonido                Sin cambios (depende de dónde está).
+
+Nuevos en la versión 2:
+  · mira-cursor (en el <a-cursor>): dibuja la mira a la distancia del objeto
+    mirado y el anillo de carga.
+  · visor-estereo (en <a-scene>): entra en WebXR si existe o, si no, divide la
+    pantalla en dos vistas (respaldo para iPhone).
+  · MUSEO.pedirSensores: pide el permiso de movimiento de iPhone dentro del toque.
+
+
+4. REGLAS DE DISEÑO PARA INTERACCIÓN POR MIRADA (para discutir en clase)
+-----------------------------------------------------------------------
+  · Con la mirada, MIRAR ES SELECCIONAR. Nada que el visitante deba mirar con
+    calma puede ser un botón:
+      - la pantalla de video se pausaría al verla → se controla con botones;
+      - la cartela se cerraría al leerla → se cierra con un botón X aparte;
+      - el piso entero no puede usar el fuse normal (teletransportaría a quien
+        solo mira hacia abajo) → espera de mirada quieta + desarmado.
+  · El fuse dispara una vez por entrada: toda acción que se quiera repetir debe
+    repetirse por código (carrusel) o pedir apartar la vista.
+  · Después de cualquier traslado, la mirada suele caer en el piso: el
+    teletransporte queda desarmado para evitar saltos encadenados sin querer.
+  · Blancos grandes: a 2 m, un botón de 15–30 cm (4°–8°) es cómodo; menos de 2°
+    es difícil de sostener con la cabeza.
+  · Mira a la profundidad del objeto: una mira fija a 1 m se ve doble en el
+    visor cuando se mira algo a 3 m (los ojos no pueden enfocar ambos).
+  · El rayo sale de la POSICIÓN del <a-cursor>: debe estar en position="0 0 0"
+    dentro de la cámara. Si se mueve hacia adelante, el rayo deja de "ver" lo
+    que esté entre la cámara y el cursor.
+  · En el visor el programa nunca gira la vista: las paradas solo orientan la
+    cámara en el computador.
+  · Sin teclado ni movimiento continuo (wasd-controls apagado): en visores de
+    celular el desplazamiento continuo es la principal causa de mareo.
+  · Antes de tocar "Entrar", la mirada no activa nada (el celular puede estar
+    apuntando a cualquier lado mientras se lee la pantalla de inicio).
+  · Un mixin solo aporta COMPONENTES: class="bloquea" va en cada muro, no en
+    el <a-mixin> (allí se ignora).
+  · Siguen vigentes las reglas de la v1: clases .clicable / .piso / .bloquea,
+    el raycaster solo prueba la malla propia de lo .clicable, lo oculto debe
+    perder la clase .clicable, y nada de punto y coma ( ; ) en los textos.
+
+
+5. CÓMO ADAPTARLA A SU PROYECTO
+-------------------------------
+  · Tiempo de la mirada: fuse-timeout="1500" en el <a-cursor> (botones) y
+    museo="esperaPiso: 1600" en <a-scene> (piso). Entre 1200 y 2000 ms es lo
+    habitual: menos provoca activaciones accidentales, más cansa.
+  · Cambiar una obra: reemplace la imagen en assets/img y el <img> en <a-assets>.
+    El ancho/alto del <a-image> debe respetar la proporción de la imagen.
+  · Añadir una obra: copie un bloque "soporte + a-image + botón audioguía" y
+    ajuste position/rotation del soporte según el muro:
+       muro izquierdo  rotation="0 90 0"   · muro derecho rotation="0 -90 0"
+       muro del fondo  rotation="0 0 0"    · muro de entrada rotation="0 180 0"
+  · Añadir una parada: copie un <a-entity mixin="parada" punto-recorrido=...>.
+  · Añadir un botón cualquiera: dele geometría propia, la clase "clicable" y
+    escuche "click" en su componente. La mirada lo activa sin más cambios.
+  · Cambiar el ambiente de una zona: edite min/max (coordenadas del mundo) y src.
+  · Audioguías: reemplace los .mp3 de assets/audio por grabaciones propias.
+  · Plantas: si cambia la altura del mezzanine, actualice museo="niveles: ..." en
+    <a-scene>, ascensor="niveles: ..." y la position y de la plataforma
+    (y = nivel + 0.02 − 0.05).
+
+
+6. ESTRUCTURA
+-------------
+  index.html                  La escena (comentada por secciones)
+  js/componentes-museo.js     Sistema y componentes
+  assets/img/                 Obras, archivo, texturas e íconos
+  assets/audio/               Interfaz (ui-*), ambientes (amb-*), audioguías (guia-*)
+  assets/video/               continuo.mp4 (H.264) y continuo.webm (alternativa)
+  vista_previa.jpg            Capturas de la escena funcionando por mirada
+
+
+7. ORIGEN DE LOS RECURSOS Y VERIFICACIÓN
+-----------------------------------------
+  · Obras, imágenes del archivo, texturas, sonidos, música y video son material
+    original generado por código para este ejemplo. "Colectivo Continuo", sus
+    artistas y la "Lámpara Órbita" son ficticios.
+  · Íconos: Lucide (licencia ISC), renderizados a PNG.
+  · Voces de las audioguías: síntesis de voz offline (Piper, voz es-carlfm).
+    Son de muestra: lo ideal es que cada equipo grabe las suyas.
+  · Probada con A-Frame 1.8.0 en Chromium (render por software) con 41 pruebas
+    automáticas que solo ORIENTAN LA CÁMARA (sin un solo clic dentro de la
+    escena): las 12 interacciones, los casos que no deben activarse (barrer el
+    piso con la mirada, leer la cartela, ver el video, mirarse los pies) y el
+    modo visor de pantalla dividida. Dos corridas seguidas sin fallas ni
+    errores en consola.
+  · NO se probó en un celular dentro de un visor real (ni Android con WebXR ni
+    el respaldo de iPhone). Antes de la clase, verificar en al menos un
+    teléfono de cada tipo: permisos, tiempos de mirada y confort.

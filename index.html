@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Museo Continuo · escena de ejemplo</title>
+  <!--
+    Taller de Diseño Interactivo IV · Bloque 3 · RV web con A-Frame 1.8.0
+    VERSIÓN 2 · INTERACCIÓN POR MIRADA para visores de celular sin mandos.
+    Todo se activa con el <a-cursor fuse="true"> de la cámara: mirar un punto
+    1,5 s equivale a hacer clic. 12 interacciones (ver LEEME.txt):
+      1 Teletransporte al piso        7 Cartela emergente al mirar la obra
+      2 Puntos fijos de recorrido     8 Audioguía por obra
+      3 Portales entre salas          9 Hotspots sobre un objeto
+      4 Ascensor al mezzanine        10 Panel siguiente / anterior
+      5 Resaltar al pasar la mirada  11 Video play()/pause() con botones
+      6 Sonido corto al seleccionar  12 Sonido ambiente por zonas
+    Abrir con un servidor (no con doble clic). En el celular hace falta HTTPS.
+  -->
+  <script src="https://aframe.io/releases/1.8.0/aframe.min.js"></script>
+  <script src="js/componentes-museo.js"></script>
+  <style>
+    :root { --fondo:#0A0E1A; --tarjeta:#141A33; --cian:#22D3EE; --magenta:#F472B6; --violeta:#8B5CF6; --gris:#94A3B8; }
+    body { margin:0; background:var(--fondo); font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+    #entrada { position:fixed; inset:0; z-index:10; display:flex; align-items:center; justify-content:center; padding:16px;
+               background:radial-gradient(circle at 30% 20%, rgba(139,92,246,.25), transparent 55%), rgba(10,14,26,.94); color:#fff; }
+    #entrada .caja { max-width:560px; background:var(--tarjeta); border:1px solid #2A3566; border-radius:20px; padding:28px 28px 24px; }
+    #entrada h1 { margin:0 0 4px; font-size:28px; }
+    #entrada p.sub { margin:0 0 18px; color:var(--cian); font-weight:600; }
+    #entrada ul { margin:0 0 22px; padding-left:20px; color:#CBD5E1; line-height:1.55; font-size:15px; }
+    #entrada b { color:#fff; }
+    .botones { display:flex; flex-direction:column; gap:10px; }
+    .botones button { width:100%; padding:14px; border:0; border-radius:12px; font-size:17px; font-weight:700; cursor:pointer; }
+    #entrar-visor { background:linear-gradient(90deg, var(--cian), var(--violeta)); color:#0A0E1A; }
+    #entrar-pantalla { background:transparent; color:#fff; border:1px solid #2A3566 !important; }
+    .botones button:disabled { opacity:.5; cursor:wait; }
+    #entrada .nota { margin:14px 0 0; font-size:13px; color:var(--gris); line-height:1.45; }
+    /* Botones flotantes */
+    .flotante { position:fixed; z-index:5; border:0; border-radius:999px; font:700 15px system-ui,sans-serif; cursor:pointer; }
+    #boton-visor { right:16px; bottom:16px; padding:12px 18px; background:var(--cian); color:#0A0E1A; display:none; }
+    body.dentro #boton-visor { display:block; }
+    #salir-visor { left:50%; top:8px; transform:translateX(-50%); padding:6px 14px; background:rgba(10,14,26,.6); color:#fff; display:none; }
+    /* Modo visor de respaldo (pantalla dividida): solo la escena */
+    body.modo-visor #boton-visor, body.modo-visor .a-enter-vr { display:none !important; }
+    body.modo-visor #salir-visor { display:block; }
+    #girar { position:fixed; inset:0; z-index:20; display:none; align-items:center; justify-content:center; text-align:center;
+             padding:24px; background:#0A0E1A; color:#fff; font:600 20px system-ui,sans-serif; }
+    @media (orientation: portrait) { body.modo-visor #girar { display:flex; } }
+  </style>
+</head>
+<body>
+
+  <!-- Pantalla de entrada: el toque en un botón es el gesto que desbloquea audio,
+       video y (en iPhone) los sensores de movimiento. -->
+  <div id="entrada">
+    <div class="caja">
+      <h1>Museo Continuo</h1>
+      <p class="sub">Galería · Archivo (mezzanine) · Sala de proyección</p>
+      <ul>
+        <li><b>Todo se hace mirando.</b> Ponga la mira (el punto del centro) sobre algo y
+            espere a que el anillo se llene (1,5 s).</li>
+        <li><b>Caminar:</b> mire un punto del piso y quédese quieto, o mire un círculo numerado.
+            Después de cada salto, aparte la mirada para volver a caminar.</li>
+        <li><b>Obras:</b> mirar la obra abre su cartela (se cierra con la X) · el parlante = audioguía.</li>
+        <li><b>Mezzanine:</b> mire el botón del ascensor.</li>
+      </ul>
+      <div class="botones">
+        <button id="entrar-visor" disabled>Cargando…</button>
+        <button id="entrar-pantalla" disabled>Ver en pantalla</button>
+      </div>
+      <p class="nota">Con visor: coloque el celular horizontal en el visor después de tocar el botón.
+        En computador, arrastre con el mouse para mirar.</p>
+    </div>
+  </div>
+  <button id="boton-visor" class="flotante">Ver con visor</button>
+  <button id="salir-visor" class="flotante">Salir del visor</button>
+  <div id="girar">Gire el celular en horizontal<br>y colóquelo en el visor</div>
+
+  <!-- Sin cursor de mouse ni raycaster en la escena: la ÚNICA entrada es el
+       a-cursor de la cámara. xr-mode-ui se apaga porque usamos botones propios
+       (en iPhone el botón VR de A-Frame no aparece). El permiso de sensores
+       de iPhone lo pide el botón de entrada (MUSEO.pedirSensores). -->
+  <a-scene
+    museo="niveles: 0, 3"
+    visor-estereo
+    xr-mode-ui="enabled: false"
+    device-orientation-permission-ui="enabled: false"
+    sonido-al-seleccionar="sonido: clic"
+    background="color: #0A0E1A"
+    renderer="antialias: true"
+    loading-screen="dotsColor: #22D3EE; backgroundColor: #0A0E1A">
+
+    <!-- ================= RECURSOS ================= -->
+    <a-assets timeout="15000">
+      <img id="tex-concreto" src="assets/img/piso_concreto.jpg">
+      <img id="tex-madera" src="assets/img/piso_madera.jpg">
+      <img id="tex-portal" src="assets/img/portal.png">
+      <img id="obra-umbral" src="assets/img/obra1_umbral.jpg">
+      <img id="obra-ruido" src="assets/img/obra2_ruido.jpg">
+      <img id="obra-calor" src="assets/img/obra3_calor.jpg">
+      <img id="obra-horizonte" src="assets/img/obra4_horizonte.jpg">
+      <img id="archivo1" src="assets/img/archivo1.jpg">
+      <img id="archivo2" src="assets/img/archivo2.jpg">
+      <img id="archivo3" src="assets/img/archivo3.jpg">
+      <img id="archivo4" src="assets/img/archivo4.jpg">
+      <img id="archivo5" src="assets/img/archivo5.jpg">
+      <img id="icono-play" src="assets/img/icono-play.png">
+      <img id="icono-pausa" src="assets/img/icono-pausa.png">
+      <img id="icono-audio" src="assets/img/icono-audio.png">
+      <img id="icono-detener" src="assets/img/icono-detener.png">
+      <img id="icono-izq" src="assets/img/icono-izq.png">
+      <img id="icono-der" src="assets/img/icono-der.png">
+      <img id="icono-subir" src="assets/img/icono-subir.png">
+      <img id="icono-bajar" src="assets/img/icono-bajar.png">
+      <img id="icono-cerrar" src="assets/img/icono-cerrar.png">
+
+      <audio id="s-clic" src="assets/audio/ui-clic.mp3" preload="auto"></audio>
+      <audio id="s-abrir" src="assets/audio/ui-abrir.mp3" preload="auto"></audio>
+      <audio id="s-cerrar" src="assets/audio/ui-cerrar.mp3" preload="auto"></audio>
+      <audio id="s-teletransporte" src="assets/audio/ui-teletransporte.mp3" preload="auto"></audio>
+      <audio id="s-portal" src="assets/audio/ui-portal.mp3" preload="auto"></audio>
+      <audio id="s-ding" src="assets/audio/ui-ding.mp3" preload="auto"></audio>
+      <audio id="amb-galeria" src="assets/audio/amb-galeria.mp3" preload="auto"></audio>
+      <audio id="amb-mezzanine" src="assets/audio/amb-mezzanine.mp3" preload="auto"></audio>
+      <audio id="amb-proyeccion" src="assets/audio/amb-proyeccion.mp3" preload="auto"></audio>
+      <audio id="guia-umbral" src="assets/audio/guia-umbral.mp3" preload="auto"></audio>
+      <audio id="guia-ruido" src="assets/audio/guia-ruido.mp3" preload="auto"></audio>
+      <audio id="guia-calor" src="assets/audio/guia-calor.mp3" preload="auto"></audio>
+      <audio id="guia-horizonte" src="assets/audio/guia-horizonte.mp3" preload="auto"></audio>
+
+      <!-- Video SIN autoplay: lo inicia el visitante mirando el botón de play (interacción 11) -->
+      <!-- MP4 (H.264): Chrome, Edge, Safari y el navegador del Quest. Alternativa: continuo.webm -->
+      <video id="video-continuo" src="assets/video/continuo.mp4" loop playsinline webkit-playsinline crossorigin="anonymous"></video>
+
+      <!-- Mezclas reutilizables -->
+      <!-- OJO: un mixin solo aporta COMPONENTES. Atributos HTML como class o id
+           no pasan a la entidad: por eso cada muro lleva class="bloquea" escrito. -->
+      <a-mixin id="muro" material="color: #2A3363; roughness: 0.9"></a-mixin>
+      <a-mixin id="boton" geometry="primitive: circle; radius: 0.14" material="shader: flat; color: #1A2140" resaltar="escala: 1.15"></a-mixin>
+      <a-mixin id="icono" geometry="primitive: plane; width: 0.15; height: 0.15" material="shader: flat; transparent: true; alphaTest: 0.2"></a-mixin>
+      <a-mixin id="aro" geometry="primitive: ring; radiusInner: 0.27; radiusOuter: 0.36" material="shader: flat; color: #22D3EE" rotation="-90 0 0"></a-mixin>
+      <!-- La parada necesita geometría PROPIA: el raycaster solo prueba la malla del
+           elemento .clicable, no la de sus hijos. Un cilindro muy bajo = disco plano. -->
+      <a-mixin id="parada" geometry="primitive: cylinder; radius: 0.36; height: 0.02; segmentsRadial: 32" material="shader: flat; color: #22D3EE; transparent: true; opacity: 0.18"></a-mixin>
+    </a-assets>
+
+    <!-- Sonidos de interfaz (6). No posicionales: suenan "en la cabeza". -->
+    <a-entity id="sonidos-ui"
+      sound__clic="src: #s-clic; positional: false; volume: 0.6"
+      sound__abrir="src: #s-abrir; positional: false; volume: 0.5"
+      sound__cerrar="src: #s-cerrar; positional: false; volume: 0.5"
+      sound__teletransporte="src: #s-teletransporte; positional: false; volume: 0.45"
+      sound__portal="src: #s-portal; positional: false; volume: 0.6"
+      sound__ding="src: #s-ding; positional: false; volume: 0.6"></a-entity>
+
+    <!-- Sonido ambiente por zonas (12): cajas min/max en coordenadas del mundo -->
+    <a-entity zona-sonido="nombre: galeria; src: #amb-galeria; min: -7 -1 -7; max: 7 2.9 7; volumen: 0.45"></a-entity>
+    <a-entity zona-sonido="nombre: mezzanine; src: #amb-mezzanine; min: -7 2.9 -7; max: 7 7 -1.5; volumen: 0.5"></a-entity>
+    <a-entity zona-sonido="nombre: proyeccion; src: #amb-proyeccion; min: 35 -1 -6; max: 45 5 6; volumen: 0.3"></a-entity>
+
+    <!-- ================= VISITANTE (RIG) ================= -->
+    <a-entity id="rig" position="0 0 5.2">
+      <!-- wasd-controls apagado: en el visor no hay teclado, y caminar con
+           movimiento continuo marea. Solo teletransporte. -->
+      <a-entity id="camara" camera look-controls="pointerLockEnabled: false" wasd-controls="enabled: false" position="0 1.6 0">
+        <!-- CURSOR DE MIRADA: única forma de interactuar.
+             · fuse: true + fuse-timeout: mirar 1,5 s = "click".
+             · position 0 0 0: el rayo sale del centro de la cámara.
+             · Su anillo propio se oculta (material visible: false); la mira que se
+               ve la dibuja mira-cursor a la distancia del objeto mirado.
+             · objects: lo que el rayo puede tocar (.bloquea detiene el rayo en los muros). -->
+        <a-cursor id="cursor" fuse="true" fuse-timeout="1500" position="0 0 0"
+                  raycaster="objects: .clicable, .piso, .bloquea; far: 30"
+                  material="visible: false" mira-cursor></a-cursor>
+        <!-- Plano negro para los fundidos de los traslados -->
+        <a-plane id="fundido" position="0 0 -0.15" width="2" height="2" visible="false"
+                 material="shader: flat; color: #000; transparent: true; opacity: 0; depthTest: false"></a-plane>
+      </a-entity>
+    </a-entity>
+
+    <!-- Retícula del teletransporte: cian = mire quieto para saltar · gris = aparte
+         la mirada para volver a caminar · magenta = no se puede (otra planta o muy lejos) -->
+    <a-ring id="reticula" radius-inner="0.18" radius-outer="0.25" rotation="-90 0 0"
+            material="shader: flat; color: #22D3EE; transparent: true; opacity: 0.9" visible="false"></a-ring>
+
+    <!-- Luces -->
+    <a-entity light="type: ambient; color: #C8D0FF; intensity: 1.0"></a-entity>
+    <a-entity light="type: hemisphere; color: #E6ECFF; groundColor: #1A1F33; intensity: 0.9"></a-entity>
+    <a-entity light="type: directional; color: #FFFFFF; intensity: 1.1" position="3 6 5"></a-entity>
+
+    <!-- ============================================================
+         SALA A · GALERÍA (14 × 14 m, 7 m de alto) con MEZZANINE
+         ============================================================ -->
+    <!-- Piso de la galería (1. teletransporte) -->
+    <a-plane class="piso" teleport-al-piso width="14" height="14" rotation="-90 0 0"
+             material="src: #tex-concreto; repeat: 4 4; roughness: 0.85"></a-plane>
+    <a-plane width="14" height="14" position="0 7 0" rotation="90 0 0" material="color: #161C38"></a-plane>
+    <a-box class="bloquea" mixin="muro" position="-7.1 3.5 0" width="0.2" height="7" depth="14.4"></a-box>
+    <a-box class="bloquea" mixin="muro" position="7.1 3.5 0" width="0.2" height="7" depth="14.4"></a-box>
+    <a-box class="bloquea" mixin="muro" position="0 3.5 -7.1" width="14.4" height="7" depth="0.2"></a-box>
+    <a-box class="bloquea" mixin="muro" position="0 3.5 7.1" width="14.4" height="7" depth="0.2"></a-box>
+
+    <!-- Rótulo de la sala (bajo el mezzanine) -->
+    <a-entity position="0 1.7 -6.98" panel-texto="titulo: GALERÍA CONTINUO; cuerpo: Colectivo Continuo · obras 2023–2026\nSuba al Archivo con el ascensor de la derecha; ancho: 3.2; alto: 0.9; alinear: center; centrarVertical: true; tamTitulo: 0.14; tamTexto: 0.06"></a-entity>
+
+    <!-- Tótem de instrucciones junto al punto de partida -->
+    <a-entity position="2.2 0 3.4" rotation="0 -25 0">
+      <a-box position="0 0.55 0" width="0.9" height="1.1" depth="0.12" material="color: #141A33"></a-box>
+      <a-entity position="0 1.5 0.07" panel-texto="titulo: Todo se hace mirando; cuerpo: · Mire 1,5 s y espere el anillo\n· Piso: mire quieto para saltar\n· Círculos numerados = paradas\n· Obra = cartela (cerrar con X)\n· Parlante = audioguía\n· Portal = sala de proyección; ancho: 1.0; alto: 1.0; tamTitulo: 0.07; tamTexto: 0.05"></a-entity>
+    </a-entity>
+
+    <!-- MEZZANINE: losa (su cara superior es piso de la planta 2) -->
+    <a-box class="piso" teleport-al-piso position="0 2.875 -5.25" width="14" height="0.25" depth="3.5"
+           material="src: #tex-madera; repeat: 7 2; roughness: 0.7"></a-box>
+    <!-- Baranda de vidrio (deja libre el hueco del ascensor, x 4.7 a 7).
+         Sin clase .bloquea: el rayo la atraviesa, como la mirada. Bajar
+         "saltando" igual es imposible: el teletransporte no cambia de planta. -->
+    <a-box position="-1.15 3.55 -3.52" width="11.7" height="1.1" depth="0.04"
+           material="color: #22D3EE; opacity: 0.18; transparent: true"></a-box>
+    <a-box position="-1.15 4.12 -3.52" width="11.7" height="0.05" depth="0.07" material="color: #94A3B8; metalness: 0.6"></a-box>
+    <a-cylinder class="bloquea" position="-5 1.375 -3.75" radius="0.12" height="2.75" material="color: #2A3566"></a-cylinder>
+    <a-cylinder class="bloquea" position="-1 1.375 -3.75" radius="0.12" height="2.75" material="color: #2A3566"></a-cylinder>
+    <a-cylinder class="bloquea" position="3 1.375 -3.75" radius="0.12" height="2.75" material="color: #2A3566"></a-cylinder>
+
+    <!-- ===== 4. ASCENSOR ===== plataforma de 1,8 × 1,8 m (y = nivel + 0,02 − 0,05) -->
+    <a-box id="ascensor" ascensor="niveles: 0, 3; duracion: 3" position="5.75 -0.03 -2.5"
+           width="1.8" height="0.1" depth="1.8" material="color: #1A2140; metalness: 0.4; roughness: 0.4">
+      <a-ring radius-inner="0.78" radius-outer="0.86" rotation="-90 0 0" position="0 0.055 0" material="shader: flat; color: #8B5CF6"></a-ring>
+    </a-box>
+    <a-cylinder position="4.8 2.3 -1.55" radius="0.04" height="4.6" material="color: #94A3B8; metalness: 0.7"></a-cylinder>
+    <a-cylinder position="6.7 2.3 -1.55" radius="0.04" height="4.6" material="color: #94A3B8; metalness: 0.7"></a-cylinder>
+    <!-- Botón en la galería: subir (destino = planta 1) -->
+    <a-entity class="clicable" boton-ascensor="ascensor: #ascensor; destino: 1" resaltar="escala: 1.08" mirar-camara position="4.1 1.25 -1.1"
+              panel-texto="titulo: Ascensor; cuerpo: Subir al Archivo; ancho: 0.8; alto: 0.34; tamTitulo: 0.07; tamTexto: 0.05; margen: 0.05; fondo: #1A2140">
+      <a-entity mixin="icono" material="src: #icono-subir" position="0.29 0 0.01"></a-entity>
+    </a-entity>
+    <!-- Botón en el mezzanine: bajar (destino = planta 0) -->
+    <a-entity class="clicable" boton-ascensor="ascensor: #ascensor; destino: 0" resaltar="escala: 1.08" mirar-camara position="4.1 4.25 -4.2"
+              panel-texto="titulo: Ascensor; cuerpo: Bajar a la galería; ancho: 0.8; alto: 0.34; tamTitulo: 0.07; tamTexto: 0.05; margen: 0.05; fondo: #1A2140">
+      <a-entity mixin="icono" material="src: #icono-bajar" position="0.29 0 0.01"></a-entity>
+    </a-entity>
+
+    <!-- ===== OBRAS (5. resaltar · 7. cartela · 8. audioguía) =====
+         Cada obra va dentro de un "soporte" con la rotación del muro: así la
+         cartela (que se crea como hermana) queda en el mismo plano.            -->
+    <a-entity position="-6.98 0 -0.5" rotation="0 90 0">
+      <a-image id="obra1" class="clicable" src="#obra-umbral" width="1.5" height="2" position="0 1.8 0" resaltar="escala: 1.04"
+        cartela="titulo: Umbral; subtitulo: Lucía Arango · 2024 · acrílico digital; cuerpo: Arcos que se repiten hacia el fondo como puertas abiertas una tras otra. La artista piensa el umbral como el instante en que dejamos el espacio físico y entramos en el virtual."></a-image>
+      <a-entity mixin="boton" class="clicable" audioguia="src: #guia-umbral; fuente: #obra1" position="0 0.5 0.02">
+        <a-entity class="icono" mixin="icono" material="src: #icono-audio" position="0 0 0.01"></a-entity>
+      </a-entity>
+    </a-entity>
+
+    <a-entity position="-6.98 0 3.5" rotation="0 90 0">
+      <a-image id="obra2" class="clicable" src="#obra-ruido" width="1.8" height="1.8" position="0 1.8 0" resaltar="escala: 1.04"
+        cartela="titulo: Ruido de fondo; subtitulo: Tomás Restrepo · 2025 · trama generativa; cuerpo: Más de mil puntos forman una trama que vibra. El tamaño de cada punto responde a una onda que atraviesa el cuadro: un retrato de la información que nos rodea."></a-image>
+      <a-entity mixin="boton" class="clicable" audioguia="src: #guia-ruido; fuente: #obra2" position="0 0.6 0.02">
+        <a-entity class="icono" mixin="icono" material="src: #icono-audio" position="0 0 0.01"></a-entity>
+      </a-entity>
+    </a-entity>
+
+    <a-entity position="-3.2 0 6.98" rotation="0 180 0">
+      <a-image id="obra3" class="clicable" src="#obra-calor" width="1.5" height="2" position="0 1.8 0" resaltar="escala: 1.04"
+        cartela="titulo: Mapa de calor; subtitulo: Valentina Ospina · 2023 · datos y pigmento; cuerpo: Un mes de recorridos por la ciudad convertidos en manchas de color. Las líneas oscuras son curvas de nivel: unen los puntos de igual intensidad."></a-image>
+      <a-entity mixin="boton" class="clicable" audioguia="src: #guia-calor; fuente: #obra3" position="0 0.5 0.02">
+        <a-entity class="icono" mixin="icono" material="src: #icono-audio" position="0 0 0.01"></a-entity>
+      </a-entity>
+    </a-entity>
+
+    <a-entity position="2.6 0 6.98" rotation="0 180 0">
+      <a-image id="obra4" class="clicable" src="#obra-horizonte" width="2.4" height="1.8" position="0 1.8 0" resaltar="escala: 1.04"
+        cartela="titulo: Horizonte plegado; subtitulo: Andrés Gil · 2026 · impresión sobre aluminio; cuerpo: Un paisaje hecho solo con bandas de color que se doblan. El círculo rosado no es un sol: es el punto desde donde el artista miraba."></a-image>
+      <a-entity mixin="boton" class="clicable" audioguia="src: #guia-horizonte; fuente: #obra4" position="0 0.6 0.02">
+        <a-entity class="icono" mixin="icono" material="src: #icono-audio" position="0 0 0.01"></a-entity>
+      </a-entity>
+    </a-entity>
+
+    <!-- ===== 9. HOTSPOTS sobre un objeto: "Lámpara Órbita" ===== -->
+    <a-entity position="0 0 0.5">
+      <a-box class="bloquea" position="0 0.45 0" width="1" height="0.9" depth="1" material="color: #1A2140"></a-box>
+      <a-entity position="0 0.5 0.505" panel-texto="titulo: Lámpara Órbita; cuerpo: Estudio Continuo · 2026\nMire los puntos luminosos; ancho: 0.9; alto: 0.4; tamTitulo: 0.065; tamTexto: 0.042; margen: 0.05"></a-entity>
+      <a-cylinder position="0 0.93 0" radius="0.32" height="0.06" material="color: #2A2F45; metalness: 0.6; roughness: 0.4"></a-cylinder>
+      <a-cylinder position="0 1.5 0" radius="0.022" height="1.1" material="color: #C0C6D6; metalness: 0.8; roughness: 0.3"></a-cylinder>
+      <a-torus position="0 2.08 0" radius="0.36" radius-tubular="0.025" material="color: #C0C6D6; metalness: 0.9; roughness: 0.25"></a-torus>
+      <a-sphere position="0 2.08 0" radius="0.16" material="color: #FFF3D6; emissive: #FFD9A0; emissiveIntensity: 1"></a-sphere>
+
+      <a-sphere class="clicable" radius="0.075" position="0.36 2.08 0.03" pulso material="shader: flat; color: #22D3EE"
+        hotspot="titulo: Anillo de aluminio; cuerpo: 100 % reciclado, curvado en una sola pieza sin soldaduras.; lado: derecha"></a-sphere>
+      <a-sphere class="clicable" radius="0.075" position="0 2.08 0.19" pulso material="shader: flat; color: #22D3EE"
+        hotspot="titulo: Difusor de vidrio soplado; cuerpo: Luz cálida de 2700 K que no deslumbra en el visor.; lado: izquierda"></a-sphere>
+      <a-sphere class="clicable" radius="0.075" position="0.24 0.97 0.2" pulso material="shader: flat; color: #22D3EE"
+        hotspot="titulo: Base con carga inalámbrica; cuerpo: Apoye el teléfono sobre la base para cargarlo.; lado: derecha"></a-sphere>
+      <a-entity light="type: point; color: #FFD9A0; intensity: 2; distance: 4; decay: 2" position="0 2.08 0.4"></a-entity>
+    </a-entity>
+
+    <!-- ===== 3. PORTAL hacia la sala de proyección ===== -->
+    <a-entity position="6.97 0 3.5" rotation="0 -90 0">
+      <a-circle class="clicable" portal="destino: 40 0 3.6; mirar: 40 2.5 -6" resaltar="escala: 1.05"
+                position="0 1.35 0" radius="0.95" material="shader: flat; src: #tex-portal; transparent: true"
+                animation="property: rotation; to: 0 0 -360; dur: 9000; loop: true; easing: linear"></a-circle>
+      <a-torus position="0 1.35 0.01" radius="1" radius-tubular="0.04" material="shader: flat; color: #22D3EE"></a-torus>
+      <a-entity position="0 2.7 0" panel-texto="titulo: Sala de proyección; cuerpo: Mire el portal para pasar; ancho: 1.5; alto: 0.4; alinear: center; centrarVertical: true; tamTitulo: 0.08; tamTexto: 0.05"></a-entity>
+    </a-entity>
+
+    <!-- ===== 2. PUNTOS FIJOS DE RECORRIDO (galería, planta 0) ===== -->
+    <a-entity mixin="parada" punto-recorrido="mirar: -7 1.8 -0.5" resaltar="escala: 1.15" position="-4.6 0 -0.5">
+      <a-entity mixin="aro" position="0 0.012 0"></a-entity>
+      <a-entity position="0 0.3 0" mirar-camara panel-texto="titulo: 1; ancho: 0.22; alto: 0.22; alinear: center; centrarVertical: true; tamTitulo: 0.12; margen: 0; redondeo: 0.11; fondo: #22D3EE; colorTitulo: #0A0E1A"></a-entity>
+    </a-entity>
+    <a-entity mixin="parada" punto-recorrido="mirar: -7 1.8 3.5" resaltar="escala: 1.15" position="-4.6 0 3.5">
+      <a-entity mixin="aro" position="0 0.012 0"></a-entity>
+      <a-entity position="0 0.3 0" mirar-camara panel-texto="titulo: 2; ancho: 0.22; alto: 0.22; alinear: center; centrarVertical: true; tamTitulo: 0.12; margen: 0; redondeo: 0.11; fondo: #22D3EE; colorTitulo: #0A0E1A"></a-entity>
+    </a-entity>
+    <a-entity mixin="parada" punto-recorrido="mirar: -3.2 1.8 7" resaltar="escala: 1.15" position="-3.2 0 4.6">
+      <a-entity mixin="aro" position="0 0.012 0"></a-entity>
+      <a-entity position="0 0.3 0" mirar-camara panel-texto="titulo: 3; ancho: 0.22; alto: 0.22; alinear: center; centrarVertical: true; tamTitulo: 0.12; margen: 0; redondeo: 0.11; fondo: #22D3EE; colorTitulo: #0A0E1A"></a-entity>
+    </a-entity>
+    <a-entity mixin="parada" punto-recorrido="mirar: 2.6 1.8 7" resaltar="escala: 1.15" position="2.6 0 4.6">
+      <a-entity mixin="aro" position="0 0.012 0"></a-entity>
+      <a-entity position="0 0.3 0" mirar-camara panel-texto="titulo: 4; ancho: 0.22; alto: 0.22; alinear: center; centrarVertical: true; tamTitulo: 0.12; margen: 0; redondeo: 0.11; fondo: #22D3EE; colorTitulo: #0A0E1A"></a-entity>
+    </a-entity>
+    <a-entity mixin="parada" punto-recorrido="mirar: 0 1.6 0.5" resaltar="escala: 1.15" position="0 0 2.3">
+      <a-entity mixin="aro" position="0 0.012 0"></a-entity>
+      <a-entity position="0 0.3 0" mirar-camara panel-texto="titulo: 5; ancho: 0.22; alto: 0.22; alinear: center; centrarVertical: true; tamTitulo: 0.12; margen: 0; redondeo: 0.11; fondo: #22D3EE; colorTitulo: #0A0E1A"></a-entity>
+    </a-entity>
+    <a-entity mixin="parada" punto-recorrido="mirar: 5.75 1.2 -2.5" resaltar="escala: 1.15" position="3.9 0 -0.2">
+      <a-entity mixin="aro" position="0 0.012 0"></a-entity>
+      <a-entity position="0 0.3 0" mirar-camara panel-texto="titulo: 6; ancho: 0.22; alto: 0.22; alinear: center; centrarVertical: true; tamTitulo: 0.12; margen: 0; redondeo: 0.11; fondo: #22D3EE; colorTitulo: #0A0E1A"></a-entity>
+    </a-entity>
+    <a-entity mixin="parada" punto-recorrido="mirar: 7 1.35 3.5" resaltar="escala: 1.15" position="4.8 0 3.5">
+      <a-entity mixin="aro" position="0 0.012 0"></a-entity>
+      <a-entity position="0 0.3 0" mirar-camara panel-texto="titulo: 7; ancho: 0.22; alto: 0.22; alinear: center; centrarVertical: true; tamTitulo: 0.12; margen: 0; redondeo: 0.11; fondo: #22D3EE; colorTitulo: #0A0E1A"></a-entity>
+    </a-entity>
+
+    <!-- ===== MEZZANINE · ARCHIVO (planta 1, y = 3) ===== -->
+    <!-- 10. Carrusel siguiente/anterior -->
+    <a-entity position="-1.5 3 -6.97"
+      carrusel="imagenes: #archivo1, #archivo2, #archivo3, #archivo4, #archivo5;
+                textos: Planta del primer pabellón con el recorrido numerado (2019). | Boceto en perspectiva de la sala principal (2020). | Estudio de color para la identidad del colectivo (2021). | Primer prototipo en malla de alambre (2023). | Montaje de la primera exposición inmersiva (2025).">
+      <a-entity position="0 2.85 0" panel-texto="titulo: Archivo del colectivo; ancho: 2.4; alto: 0.32; alinear: center; centrarVertical: true; tamTitulo: 0.11; opacidadFondo: 0; borde: #0A0E1A"></a-entity>
+      <a-image class="carrusel-imagen" width="2.4" height="1.5" position="0 1.85 0" material="transparent: true"></a-image>
+      <a-entity class="carrusel-texto" position="-0.2 0.86 0" panel-texto="ancho: 2.0; alto: 0.32; tamTexto: 0.065; centrarVertical: true; margen: 0.05"></a-entity>
+      <a-entity class="carrusel-contador" position="1.0 0.86 0" panel-texto="titulo: 1 / 5; ancho: 0.4; alto: 0.32; alinear: center; centrarVertical: true; tamTitulo: 0.07; margen: 0; fondo: #8B5CF6; borde: #8B5CF6"></a-entity>
+      <a-entity mixin="boton" carrusel-boton="dir: -1" geometry="radius: 0.2" position="-1.55 1.85 0.02">
+        <a-entity mixin="icono" material="src: #icono-izq" geometry="width: 0.22; height: 0.22" position="0 0 0.01"></a-entity>
+      </a-entity>
+      <a-entity mixin="boton" carrusel-boton="dir: 1" geometry="radius: 0.2" position="1.55 1.85 0.02">
+        <a-entity mixin="icono" material="src: #icono-der" geometry="width: 0.22; height: 0.22" position="0 0 0.01"></a-entity>
+      </a-entity>
+    </a-entity>
+
+    <!-- Puntos fijos en el mezzanine (solo visibles en la planta 1) -->
+    <a-entity mixin="parada" punto-recorrido="mirar: -1.5 4.85 -7" resaltar="escala: 1.15" position="-1.5 3 -4.7">
+      <a-entity mixin="aro" position="0 0.012 0"></a-entity>
+      <a-entity position="0 0.3 0" mirar-camara panel-texto="titulo: A; ancho: 0.22; alto: 0.22; alinear: center; centrarVertical: true; tamTitulo: 0.12; margen: 0; redondeo: 0.11; fondo: #8B5CF6; colorTitulo: #FFFFFF"></a-entity>
+    </a-entity>
+    <a-entity mixin="parada" punto-recorrido="mirar: 0 1.2 3" resaltar="escala: 1.15" position="-5.2 3 -4.0">
+      <a-entity mixin="aro" position="0 0.012 0"></a-entity>
+      <a-entity position="0 0.3 0" mirar-camara panel-texto="titulo: B; ancho: 0.22; alto: 0.22; alinear: center; centrarVertical: true; tamTitulo: 0.12; margen: 0; redondeo: 0.11; fondo: #8B5CF6; colorTitulo: #FFFFFF"></a-entity>
+    </a-entity>
+    <a-entity position="-5.2 4.0 -6.97" panel-texto="titulo: Mirador; cuerpo: Desde el punto B se ve toda la galería.; ancho: 1.2; alto: 0.4; tamTitulo: 0.07; tamTexto: 0.045; margen: 0.05"></a-entity>
+
+    <!-- ============================================================
+         SALA B · PROYECCIÓN (10 × 12 m), separada: solo se llega por portal
+         ============================================================ -->
+    <a-plane class="piso" teleport-al-piso position="40 0 0" width="10" height="12" rotation="-90 0 0"
+             material="src: #tex-concreto; repeat: 3 4; color: #8A90A8; roughness: 0.9"></a-plane>
+    <a-plane position="40 5 0" width="10" height="12" rotation="90 0 0" material="color: #070A14"></a-plane>
+    <a-box class="bloquea" mixin="muro" position="34.9 2.5 0" width="0.2" height="5" depth="12.4" material="color: #1A2142"></a-box>
+    <a-box class="bloquea" mixin="muro" position="45.1 2.5 0" width="0.2" height="5" depth="12.4" material="color: #1A2142"></a-box>
+    <a-box class="bloquea" mixin="muro" position="40 2.5 -6.1" width="10.4" height="5" depth="0.2" material="color: #1A2142"></a-box>
+    <a-box class="bloquea" mixin="muro" position="40 2.5 6.1" width="10.4" height="5" depth="0.2" material="color: #1A2142"></a-box>
+
+    <!-- 11. Pantalla de video: play()/pause() con BOTONES.
+         La pantalla es .bloquea, no .clicable: el visitante la mira para ver el
+         video, y con fuse eso la pausaría a los 1,5 s. -->
+    <a-box position="40 2.6 -5.97" width="6.8" height="4" depth="0.05" material="color: #05070D"></a-box>
+    <a-video id="pantalla" class="bloquea" src="#video-continuo" width="6.4" height="3.6" position="40 2.6 -5.92"
+             pantalla-video="zona: proyeccion; barra: #barra-video">
+      <!-- Play grande al centro: solo existe (y solo es .clicable) mientras el video está en pausa -->
+      <a-entity class="overlay-play" position="0 0 0.02">
+        <a-circle class="control-video clicable" radius="0.45" resaltar="escala: 1.1"
+                  material="shader: flat; color: #0A0E1A; opacity: 0.75; transparent: true"></a-circle>
+        <a-entity mixin="icono" material="src: #icono-play" geometry="width: 0.5; height: 0.5" position="0.03 0 0.01"></a-entity>
+      </a-entity>
+    </a-video>
+    <a-entity position="40 0.66 -5.91">
+      <a-plane width="6.4" height="0.05" material="shader: flat; color: #1A2140"></a-plane>
+      <a-plane id="barra-video" width="6.4" height="0.05" position="0 0 0.005" scale="0.001 1 1" material="shader: flat; color: #22D3EE"></a-plane>
+    </a-entity>
+    <!-- Botón play/pausa debajo de la pantalla (siempre disponible) -->
+    <a-entity mixin="boton" class="control-video clicable" position="40 0.32 -5.9" geometry="radius: 0.2">
+      <a-entity class="icono-control-video" mixin="icono" material="src: #icono-play" geometry="width: 0.22; height: 0.22" position="0.01 0 0.01"></a-entity>
+    </a-entity>
+    <!-- Control junto a la butaca (hace lo mismo) -->
+    <a-entity position="42.6 0 -2.6">
+      <a-cylinder class="bloquea" position="0 0.5 0" radius="0.18" height="1" material="color: #1A2140"></a-cylinder>
+      <a-entity mixin="boton" class="control-video clicable" position="0 1.08 0.05" rotation="-30 0 0" geometry="radius: 0.17">
+        <a-entity class="icono-control-video" mixin="icono" material="src: #icono-play" position="0.01 0 0.01"></a-entity>
+      </a-entity>
+      <a-entity position="0 1.45 0" mirar-camara panel-texto="titulo: Video; cuerpo: Mire el botón para reproducir o pausar; ancho: 0.8; alto: 0.34; tamTitulo: 0.06; tamTexto: 0.042; margen: 0.045"></a-entity>
+    </a-entity>
+    <!-- Butacas -->
+    <a-box class="bloquea" position="40 0.23 -0.6" width="6" height="0.45" depth="0.55" material="color: #2A3566"></a-box>
+    <a-box class="bloquea" position="40 0.23 1.2" width="6" height="0.45" depth="0.55" material="color: #2A3566"></a-box>
+    <a-entity position="35.02 2.2 0" rotation="0 90 0" panel-texto="titulo: Sala de proyección; subtitulo: Continuo, un recorrido · 20 s · bucle; cuerpo: Mire el botón de play (centro de la pantalla) o el de abajo para reproducir o pausar. El video se pausa solo si sale de la sala.; ancho: 1.8; alto: 0.8; tamTitulo: 0.09"></a-entity>
+
+    <!-- Puntos fijos de la sala B -->
+    <a-entity mixin="parada" punto-recorrido="mirar: 40 2.6 -6" resaltar="escala: 1.15" position="40 0 3.6">
+      <a-entity mixin="aro" position="0 0.012 0"></a-entity>
+      <a-entity position="0 0.3 0" mirar-camara panel-texto="titulo: 8; ancho: 0.22; alto: 0.22; alinear: center; centrarVertical: true; tamTitulo: 0.12; margen: 0; redondeo: 0.11; fondo: #22D3EE; colorTitulo: #0A0E1A"></a-entity>
+    </a-entity>
+    <a-entity mixin="parada" punto-recorrido="mirar: 40 2.6 -6" resaltar="escala: 1.15" position="40 0 -2.3">
+      <a-entity mixin="aro" position="0 0.012 0"></a-entity>
+      <a-entity position="0 0.3 0" mirar-camara panel-texto="titulo: 9; ancho: 0.22; alto: 0.22; alinear: center; centrarVertical: true; tamTitulo: 0.12; margen: 0; redondeo: 0.11; fondo: #22D3EE; colorTitulo: #0A0E1A"></a-entity>
+    </a-entity>
+
+    <!-- Portal de regreso a la galería -->
+    <a-entity position="37.5 0 5.97" rotation="0 180 0">
+      <a-circle class="clicable" portal="destino: 4.8 0 3.5; mirar: 0 1.6 3.5" resaltar="escala: 1.05"
+                position="0 1.35 0" radius="0.95" material="shader: flat; src: #tex-portal; transparent: true"
+                animation="property: rotation; to: 0 0 -360; dur: 9000; loop: true; easing: linear"></a-circle>
+      <a-torus position="0 1.35 0.01" radius="1" radius-tubular="0.04" material="shader: flat; color: #F472B6"></a-torus>
+      <a-entity position="0 2.7 0" panel-texto="titulo: Volver a la galería; cuerpo: Mire el portal para pasar; ancho: 1.5; alto: 0.4; alinear: center; centrarVertical: true; tamTitulo: 0.08; tamTexto: 0.05"></a-entity>
+    </a-entity>
+  </a-scene>
+
+  <script>
+    // Botones de entrada. El toque es el gesto que el navegador exige para:
+    // audio/video con sonido, permiso de sensores (iPhone) y entrar en VR.
+    var escena = document.querySelector('a-scene');
+    var bVisor = document.getElementById('entrar-visor');
+    var bPantalla = document.getElementById('entrar-pantalla');
+    function listo () {
+      bVisor.disabled = bPantalla.disabled = false;
+      bVisor.textContent = 'Entrar con visor VR';
+    }
+    if (escena.hasLoaded) { listo(); } else { escena.addEventListener('loaded', listo); }
+
+    function entrar (conVisor) {
+      escena.systems.museo.iniciarAudio();          // también "enciende" la mirada
+      MUSEO.pedirSensores(escena);                  // iPhone: permiso de movimiento
+      document.getElementById('entrada').style.display = 'none';
+      document.body.classList.add('dentro');
+      if (conVisor) { escena.components['visor-estereo'].entrar(); }
+    }
+    bVisor.addEventListener('click', function () { entrar(true); });
+    bPantalla.addEventListener('click', function () { entrar(false); });
+    document.getElementById('boton-visor').addEventListener('click', function () { escena.components['visor-estereo'].entrar(); });
+    document.getElementById('salir-visor').addEventListener('click', function () { escena.components['visor-estereo'].salir(); });
+  </script>
+</body>
+</html>
